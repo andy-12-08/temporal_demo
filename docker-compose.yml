@@ -1,0 +1,81 @@
+services:
+  # Temporal Server
+  temporal:
+    image: temporalio/auto-setup:1.27.2
+    ports:
+      - "7233:7233"  # Temporal gRPC port
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgresql
+    depends_on:
+      - postgresql
+    networks:
+      - temporal-network
+
+  # Temporal UI (separate service)
+  temporal-ui:
+    image: temporalio/ui:2.37.2
+    ports:
+      - "8080:8080"  # Temporal Web UI port
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:8080
+    depends_on:
+      - temporal
+    networks:
+      - temporal-network
+
+  # PostgreSQL database for Temporal
+  postgresql:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=temporal
+      - POSTGRES_PASSWORD=temporal
+      - POSTGRES_DB=temporal
+    volumes:
+      - postgresql_data:/var/lib/postgresql/data
+    networks:
+      - temporal-network
+
+  # Data Analysis Agent
+  data_analysis_agent:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      - temporal
+    networks:
+      - temporal-network
+    volumes:
+      - .:/app
+    command: ["uv", "run", "uvicorn", "langgraph_temporal.run_workflow:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  # Temporal Worker
+  temporal_worker:
+    build: .
+    container_name: temporal-langgraph-worker
+    depends_on:
+      - temporal
+    env_file:
+      - .env
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    networks:
+      - temporal-network
+    volumes:
+      - .:/app
+    command: ["uv", "run", "python", "-m", "langgraph_temporal.worker"]
+
+volumes:
+  postgresql_data:
+
+networks:
+  temporal-network:
+    driver: bridge

@@ -1,0 +1,35 @@
+services:
+  # Temporal Server (simplified - uses in-memory storage)
+  temporal:
+    image: temporalio/auto-setup:1.27.2
+    ports:
+      - "7233:7233"  # Temporal gRPC port
+    environment:
+      - DB=sqlite
+      - SQLITE_PATH=/tmp/temporal.db
+
+  # Temporal UI (separate service)
+  temporal-ui:
+    image: temporalio/ui:2.37.2
+    ports:
+      - "8080:8080"  # Temporal Web UI port
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:8080
+    depends_on:
+      - temporal
+
+  # Your FastAPI application
+  data_analysis_agent:
+    build: .                        # Uses your Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      - temporal
+    volumes:
+      - .:/app
+    command: ["uv", "run", "uvicorn", "langgraph_temporal.run_workflow:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
